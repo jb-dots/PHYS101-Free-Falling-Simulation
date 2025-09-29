@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Freefalling Objects Simulation</title>
+    <style>
+        body {
+            display: flex;
+            flex-direction: row;
+            align-items: flex-start;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+            background: linear-gradient(to bottom, #87CEEB, #E0FFFF); /* Original sky gradient */
+            font-family: 'Arial', sans-serif;
+            color: #333;
+            padding: 20px;
+            gap: 20px;
+        }
+        #left-controls {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            margin-top: 280px; /* Adjusted for taller canvas */
+        }
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+            background-color: #4682B4; /* Original blue */
+            color: white;
+            border: none;
+            border-radius: 5px;
+            transition: background-color 0.3s, transform 0.1s;
+            width: 120px;
+        }
+        button:hover {
+            background-color: #5F9EA0; /* Original hover */
+        }
+        button:active {
+            transform: scale(0.98);
+        }
+        #simulation {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        h1 {
+            display: none; /* Hide title as per mockup */
+        }
+        #canvas {
+            border: 2px solid #4682B4; /* Original border */
+            background: linear-gradient(to bottom, #FFFFFF, #F0F8FF); /* Original canvas gradient */
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2); /* Original shadow */
+            border-radius: 10px; /* Less boxy */
+            width: 450px; /* Original width */
+            height: 700px; /* A bit taller */
+        }
+        #right-column {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            margin-top: 180px; /* Adjusted for taller canvas */
+        }
+        #info-container {
+            background-color: #fff; /* Original white */
+            padding: 10px;
+            border: 2px solid #4682B4; /* Original border */
+            border-radius: 10px; /* Less boxy */
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2); /* Original shadow */
+            width: 200px;
+            text-align: left;
+        }
+        #info-container h2 {
+            font-size: 14px;
+            margin: 0 0 10px;
+        }
+        #current-velocity, #final-velocity, #elapsed-time {
+            font-size: 14px;
+            margin-bottom: 5px;
+        }
+        #controls {
+            background-color: #fff; /* Change to white for less boxy feel, or original style */
+            padding: 10px;
+            border: 2px solid #4682B4;
+            border-radius: 10px; /* Less boxy */
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+            width: 200px;
+        }
+        label {
+            font-weight: bold;
+            font-size: 14px;
+        }
+        input[type="number"] {
+            padding: 5px;
+            width: 100px;
+            margin-bottom: 10px;
+        }
+        #endless-fall-label {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div id="left-controls">
+        <button onclick="dropObject()">Drop Object</button>
+        <button onclick="tossObject()">Toss Object</button>
+        <button onclick="resetSimulation()">Reset</button>
+    </div>
+    <div id="simulation">
+        <h1>Freefalling Objects Simulation</h1>
+        <canvas id="canvas" width="450" height="700"></canvas>
+    </div>
+    <div id="right-column">
+        <div id="info-container">
+            <h2>OBJECT INFO (LAST DROPPED)</h2>
+            <div id="final-velocity">Final Velocity: 0 m/s</div>
+            <div id="current-velocity">Current Velocity: 0 m/s</div>
+            <div id="elapsed-time">Time: 0 s</div>
+        </div>
+        <div id="controls">
+            <label for="mass">Mass (Kg):</label><br>
+            <input type="number" id="mass" value="1" min="0.1" step="0.1"><br>
+            <label for="height">Initial Height (m):</label><br>
+            <input type="number" id="height" value="30" min="0" step="1"><br>
+            <label for="toss-height">Toss Height (m):</label><br>
+            <input type="number" id="toss-height" value="10" min="0" step="1"><br>
+            <div id="endless-fall-label">
+                <input type="checkbox" id="endless-fall">
+                <label for="endless-fall">Enable Endless Fall</label>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const scale = 10; // pixels per meter
+        const g = 9.81; // m/s²
+        const fps = 60; // Assumed frames per second
+        const gravity = g * scale / fps; // px/frame²
+        const gridSize = 20; // Grid size in pixels
+        const axisOffset = 50; // Offset for axes
+        let objects = []; // Array to hold falling objects
+        const currentVelocityDisplay = document.getElementById('current-velocity');
+        const finalVelocityDisplay = document.getElementById('final-velocity');
+        const elapsedTimeDisplay = document.getElementById('elapsed-time');
+
+        class FallingObject {
+            constructor(x, y, mass, initialVelocityPxFrame, radius, color, shadowColor, airResistance, endless) {
+                this.x = x + axisOffset; // Shift x to right of y-axis
+                this.y = y;
+                this.mass = mass;
+                this.radius = radius;
+                this.velocity = initialVelocityPxFrame; // Initial velocity in px/frame (negative for up)
+                this.initialVelocity = initialVelocityPxFrame;
+                this.maxVelocity = 0; // Track max downward velocity in px/frame
+                this.color = color;
+                this.shadowColor = shadowColor;
+                this.airResistance = airResistance;
+                this.endless = endless;
+                this.isTracking = false;
+                this.trail = []; // Array to store trail positions
+                this.stopped = false; // Flag to indicate if object has stopped
+                this.elapsedTime = 0; // Elapsed time in seconds
+            }
+
+            update() {
+                if (this.stopped) return;
+
+                this.elapsedTime += 1 / fps;
+
+                // Add current position to trail
+                this.trail.push({ x: this.x, y: this.y });
+                if (this.trail.length > 500) { // Limit trail length for performance
+                    this.trail.shift();
+                }
+
+                // Handle top boundary
+                if (this.y - this.radius <= 0 && this.velocity < 0) {
+                    this.y = this.radius;
+                    this.velocity = 0;
+                }
+
+                // Calculate real velocity
+                const real_v = this.velocity * fps / scale;
+
+                // Calculate real acceleration
+                let real_a = g;
+                if (this.airResistance) {
+                    const c = 0.01; // Drag coefficient
+                    const drag = Math.sign(real_v) * c * (real_v * real_v) / this.mass;
+                    real_a -= drag;
+                }
+
+                // Convert to px/frame²
+                const a = real_a * scale / (fps * fps);
+
+                this.velocity += a;
+                if (this.velocity > this.maxVelocity) {
+                    this.maxVelocity = this.velocity;
+                }
+                this.y += this.velocity;
+
+                // Handle bottom boundary if not endless
+                if (!this.endless && this.y + this.radius >= canvas.height) {
+                    this.y = canvas.height - this.radius;
+                    this.velocity = 0;
+                    this.stopped = true;
+                }
+
+                // Handle endless fall
+                if (this.endless && this.y - this.radius > canvas.height) {
+                    this.y = -this.radius; // Reset to top
+                    this.trail = []; // Clear trail to avoid weird lines
+                }
+            }
+
+            draw() {
+                // Skip drawing if off-screen
+                if (this.y + this.radius < 0 || this.y - this.radius > canvas.height) {
+                    return;
+                }
+
+                // Draw trail (only visible parts)
+                if (this.trail.length > 1) {
+                    ctx.beginPath();
+                    let started = false;
+                    for (let i = 0; i < this.trail.length; i++) {
+                        const pos = this.trail[i];
+                        if (pos.y >= 0 && pos.y <= canvas.height) {
+                            if (!started) {
+                                ctx.moveTo(pos.x, pos.y);
+                                started = true;
+                            } else {
+                                ctx.lineTo(pos.x, pos.y);
+                            }
+                        }
+                    }
+                    ctx.strokeStyle = this.color.replace('100%', '50%'); // Semi-transparent trail
+                    ctx.lineWidth = 2;
+                    ctx.setLineDash([5, 5]); // Dotted line
+                    ctx.stroke();
+                    ctx.setLineDash([]); // Reset to solid
+                }
+
+                // Draw shadow for depth
+                ctx.beginPath();
+                ctx.arc(this.x, this.y + 5, this.radius * 1.1, 0, Math.PI * 2);
+                ctx.fillStyle = this.shadowColor;
+                ctx.fill();
+                ctx.closePath();
+
+                // Draw main circle
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+                ctx.fillStyle = this.color;
+                ctx.fill();
+                ctx.strokeStyle = '#FFFFFF'; // White outline for pop
+                ctx.lineWidth = 2;
+                ctx.stroke();
+                ctx.closePath();
+            }
+
+            getVelocityMs() {
+                return (this.velocity * fps / scale).toFixed(2); // Convert to m/s (signed)
+            }
+
+            getMaxVelocityMs() {
+                return (this.maxVelocity * fps / scale).toFixed(2); // Convert to m/s
+            }
+
+            getElapsedTime() {
+                return this.elapsedTime.toFixed(2);
+            }
+
+            getDirection() {
+                return this.velocity >= 0 ? '' : ' upward'; // No direction for downward in display
+            }
+        }
+
+        function drawGrid() {
+            ctx.strokeStyle = '#ddd';
+            ctx.lineWidth = 1;
+
+            // Vertical lines starting from axisOffset
+            for (let x = axisOffset; x <= canvas.width; x += gridSize) {
+                ctx.beginPath();
+                ctx.moveTo(x, 0);
+                ctx.lineTo(x, canvas.height);
+                ctx.stroke();
+            }
+
+            // Horizontal lines
+            for (let y = 0; y <= canvas.height; y += gridSize) {
+                ctx.beginPath();
+                ctx.moveTo(axisOffset, y);
+                ctx.lineTo(canvas.width, y);
+                ctx.stroke();
+            }
+        }
+
+        function drawAxes() {
+            ctx.strokeStyle = '#000';
+            ctx.lineWidth = 2;
+
+            // X-axis (bottom)
+            ctx.beginPath();
+            ctx.moveTo(axisOffset, canvas.height);
+            ctx.lineTo(canvas.width, canvas.height);
+            ctx.stroke();
+
+            // Y-axis (left)
+            ctx.beginPath();
+            ctx.moveTo(axisOffset, canvas.height);
+            ctx.lineTo(axisOffset, 0);
+            ctx.stroke();
+
+            // Arrowheads
+            // X-arrow
+            ctx.beginPath();
+            ctx.moveTo(canvas.width, canvas.height);
+            ctx.lineTo(canvas.width - 10, canvas.height - 5);
+            ctx.lineTo(canvas.width - 10, canvas.height + 5);
+            ctx.fillStyle = '#000';
+            ctx.fill();
+
+            // Y-arrow
+            ctx.beginPath();
+            ctx.moveTo(axisOffset, 0);
+            ctx.lineTo(axisOffset - 5, 10);
+            ctx.lineTo(axisOffset + 5, 10);
+            ctx.fill();
+
+            // Labels
+            ctx.font = '12px Arial';
+            ctx.fillStyle = '#000';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'top';
+            ctx.fillText('X (Position in meters)', canvas.width / 2, canvas.height + 10);
+
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'middle';
+            ctx.save();
+            ctx.translate(10, canvas.height / 2);
+            ctx.rotate(-Math.PI / 2);
+            ctx.fillText('Y (Height in meters)', 0, 0);
+            ctx.restore();
+
+            // Y-axis ticks and labels
+            ctx.textAlign = 'right';
+            const maxHeight = canvas.height / scale;
+            for (let h = 0; h <= maxHeight; h += 5) {
+                const y = canvas.height - h * scale;
+                ctx.beginPath();
+                ctx.moveTo(axisOffset - 5, y);
+                ctx.lineTo(axisOffset, y);
+                ctx.stroke();
+
+                let labelY = y;
+                let baseline = 'middle';
+                if (y < 10) {
+                    labelY = 10;
+                    baseline = 'top';
+                } else if (y > canvas.height - 10) {
+                    labelY = canvas.height - 10;
+                    baseline = 'bottom';
+                }
+                ctx.textBaseline = baseline;
+                ctx.fillText(h, axisOffset - 10, labelY);
+            }
+            ctx.textBaseline = 'middle'; // Reset
+
+            // X-axis ticks and labels
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'top';
+            const maxWidth = (canvas.width - axisOffset) / scale;
+            for (let pos = 0; pos <= maxWidth; pos += 5) {
+                const x = axisOffset + pos * scale;
+                if (x > canvas.width) break;
+                ctx.beginPath();
+                ctx.moveTo(x, canvas.height);
+                ctx.lineTo(x, canvas.height + 5);
+                ctx.stroke();
+                ctx.fillText(pos, x, canvas.height + 5);
+            }
+        }
+
+        function animate() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            drawGrid(); // Draw grid
+            drawAxes(); // Draw axes
+            objects.forEach(obj => {
+                obj.update();
+                obj.draw();
+            });
+
+            const trackingObj = objects.find(obj => obj.isTracking);
+            if (trackingObj) {
+                const currentV = Math.abs(trackingObj.getVelocityMs());
+                const direction = trackingObj.getDirection();
+                currentVelocityDisplay.textContent = `Current Velocity: ${currentV} m/s${direction}`;
+                finalVelocityDisplay.textContent = `Final Velocity: ${trackingObj.getMaxVelocityMs()} m/s`;
+                elapsedTimeDisplay.textContent = `Time: ${trackingObj.getElapsedTime()} s`;
+            } else {
+                currentVelocityDisplay.textContent = 'Current Velocity: 0 m/s';
+                finalVelocityDisplay.textContent = 'Final Velocity: 0 m/s';
+                elapsedTimeDisplay.textContent = 'Time: 0 s';
+            }
+
+            requestAnimationFrame(animate);
+        }
+
+        function createObject(initialVelocityPxFrame) {
+            const mass = parseFloat(document.getElementById('mass').value);
+            const height = parseFloat(document.getElementById('height').value);
+            const airResistance = true;
+            const endless = document.getElementById('endless-fall').checked;
+            const heightPx = height * scale;
+            const radius = Math.random() * 20 + 10; /* Adjusted back for larger canvas */
+            const initialY = canvas.height - heightPx - radius;
+            const x = Math.random() * (canvas.width - axisOffset - 2 * radius);
+            const color = `hsl(${Math.random() * 360}, 100%, 50%)`;
+            const shadowColor = `hsla(${Math.random() * 360}, 100%, 50%, 0.5)`;
+            const obj = new FallingObject(x, initialY, mass, initialVelocityPxFrame, radius, color, shadowColor, airResistance, endless);
+
+            objects.forEach(o => o.isTracking = false);
+            obj.isTracking = true;
+            objects.push(obj);
+        }
+
+        function dropObject() {
+            createObject(0);
+        }
+
+        function tossObject() {
+            const tossHeight = parseFloat(document.getElementById('toss-height').value);
+            const upwardSpeedMs = Math.sqrt(2 * g * tossHeight);
+            const initialVelocityPxFrame = -upwardSpeedMs * scale / fps;
+            createObject(initialVelocityPxFrame);
+        }
+
+        function resetSimulation() {
+            objects = [];
+            currentVelocityDisplay.textContent = 'Current Velocity: 0 m/s';
+            finalVelocityDisplay.textContent = 'Final Velocity: 0 m/s';
+            elapsedTimeDisplay.textContent = 'Time: 0 s';
+        }
+
+        animate();
+    </script>
+</body>
+</html>
