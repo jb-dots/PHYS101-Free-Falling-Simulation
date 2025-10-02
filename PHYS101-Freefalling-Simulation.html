@@ -61,9 +61,9 @@
             display: flex;
             flex-direction: column;
             gap: 20px;
-            margin-top: 180px; /* Adjusted for taller canvas */
+            margin-top: 50px; /* Moved higher */
         }
-        #info-container {
+        #drop-info-container, #toss-info-container {
             background-color: #fff; /* Original white */
             padding: 10px;
             border: 2px solid #4682B4; /* Original border */
@@ -72,11 +72,12 @@
             width: 200px;
             text-align: left;
         }
-        #info-container h2 {
+        #drop-info-container h2, #toss-info-container h2 {
             font-size: 14px;
             margin: 0 0 10px;
         }
-        #current-velocity, #final-velocity, #elapsed-time {
+        #drop-initial-velocity, #drop-current-velocity, #drop-final-velocity, #drop-elapsed-time,
+        #toss-initial-velocity, #toss-current-velocity, #toss-final-velocity, #toss-elapsed-time {
             font-size: 14px;
             margin-bottom: 5px;
         }
@@ -115,11 +116,19 @@
         <canvas id="canvas" width="450" height="700"></canvas>
     </div>
     <div id="right-column">
-        <div id="info-container">
-            <h2>OBJECT INFO (LAST DROPPED)</h2>
-            <div id="final-velocity">Final Velocity: 0 m/s</div>
-            <div id="current-velocity">Current Velocity: 0 m/s</div>
-            <div id="elapsed-time">Time: 0 s</div>
+        <div id="drop-info-container">
+            <h2>DROP OBJECT INFO</h2>
+            <div id="drop-initial-velocity">Initial Velocity: 0 m/s downward</div>
+            <div id="drop-final-velocity">Final Velocity: 0 m/s</div>
+            <div id="drop-current-velocity">Current Velocity: 0 m/s downward</div>
+            <div id="drop-elapsed-time">Time: 0 s</div>
+        </div>
+        <div id="toss-info-container">
+            <h2>TOSS OBJECT INFO</h2>
+            <div id="toss-initial-velocity">Initial Velocity: 0 m/s downward</div>
+            <div id="toss-final-velocity">Final Velocity: 0 m/s</div>
+            <div id="toss-current-velocity">Current Velocity: 0 m/s downward</div>
+            <div id="toss-elapsed-time">Time: 0 s</div>
         </div>
         <div id="controls">
             <label for="mass">Mass (Kg):</label><br>
@@ -145,12 +154,19 @@
         const gridSize = 20; // Grid size in pixels
         const axisOffset = 50; // Offset for axes
         let objects = []; // Array to hold falling objects
-        const currentVelocityDisplay = document.getElementById('current-velocity');
-        const finalVelocityDisplay = document.getElementById('final-velocity');
-        const elapsedTimeDisplay = document.getElementById('elapsed-time');
+        let lastDrop = null;
+        let lastToss = null;
+        const dropInitialVelocityDisplay = document.getElementById('drop-initial-velocity');
+        const dropCurrentVelocityDisplay = document.getElementById('drop-current-velocity');
+        const dropFinalVelocityDisplay = document.getElementById('drop-final-velocity');
+        const dropElapsedTimeDisplay = document.getElementById('drop-elapsed-time');
+        const tossInitialVelocityDisplay = document.getElementById('toss-initial-velocity');
+        const tossCurrentVelocityDisplay = document.getElementById('toss-current-velocity');
+        const tossFinalVelocityDisplay = document.getElementById('toss-final-velocity');
+        const tossElapsedTimeDisplay = document.getElementById('toss-elapsed-time');
 
         class FallingObject {
-            constructor(x, y, mass, initialVelocityPxFrame, radius, color, shadowColor, airResistance, endless) {
+            constructor(x, y, mass, initialVelocityPxFrame, radius, color, shadowColor, airResistance, endless, type) {
                 this.x = x + axisOffset; // Shift x to right of y-axis
                 this.y = y;
                 this.mass = mass;
@@ -162,6 +178,7 @@
                 this.shadowColor = shadowColor;
                 this.airResistance = airResistance;
                 this.endless = endless;
+                this.type = type;
                 this.isTracking = false;
                 this.trail = []; // Array to store trail positions
                 this.stopped = false; // Flag to indicate if object has stopped
@@ -269,6 +286,10 @@
                 return (this.velocity * fps / scale).toFixed(2); // Convert to m/s (signed)
             }
 
+            getInitialVelocityMs() {
+                return (this.initialVelocity * fps / scale).toFixed(2); // Convert to m/s (signed)
+            }
+
             getMaxVelocityMs() {
                 return (this.maxVelocity * fps / scale).toFixed(2); // Convert to m/s
             }
@@ -278,7 +299,7 @@
             }
 
             getDirection() {
-                return this.velocity >= 0 ? '' : ' upward'; // No direction for downward in display
+                return this.velocity >= 0 ? 'downward' : 'upward';
             }
         }
 
@@ -398,23 +419,46 @@
                 obj.draw();
             });
 
-            const trackingObj = objects.find(obj => obj.isTracking);
-            if (trackingObj) {
-                const currentV = Math.abs(trackingObj.getVelocityMs());
-                const direction = trackingObj.getDirection();
-                currentVelocityDisplay.textContent = `Current Velocity: ${currentV} m/s${direction}`;
-                finalVelocityDisplay.textContent = `Final Velocity: ${trackingObj.getMaxVelocityMs()} m/s`;
-                elapsedTimeDisplay.textContent = `Time: ${trackingObj.getElapsedTime()} s`;
+            // Update drop info
+            if (lastDrop) {
+                const obj = lastDrop;
+                const initialV = obj.getInitialVelocityMs();
+                const initialDir = initialV >= 0 ? 'downward' : 'upward';
+                dropInitialVelocityDisplay.textContent = `Initial Velocity: ${Math.abs(initialV)} m/s ${initialDir}`;
+                const currentV = Math.abs(obj.getVelocityMs());
+                const direction = obj.getDirection();
+                dropCurrentVelocityDisplay.textContent = `Current Velocity: ${currentV} m/s ${direction}`;
+                dropFinalVelocityDisplay.textContent = `Final Velocity: ${obj.getMaxVelocityMs()} m/s`;
+                dropElapsedTimeDisplay.textContent = `Time: ${obj.getElapsedTime()} s`;
             } else {
-                currentVelocityDisplay.textContent = 'Current Velocity: 0 m/s';
-                finalVelocityDisplay.textContent = 'Final Velocity: 0 m/s';
-                elapsedTimeDisplay.textContent = 'Time: 0 s';
+                dropInitialVelocityDisplay.textContent = 'Initial Velocity: 0 m/s downward';
+                dropCurrentVelocityDisplay.textContent = 'Current Velocity: 0 m/s downward';
+                dropFinalVelocityDisplay.textContent = 'Final Velocity: 0 m/s';
+                dropElapsedTimeDisplay.textContent = 'Time: 0 s';
+            }
+
+            // Update toss info
+            if (lastToss) {
+                const obj = lastToss;
+                const initialV = obj.getInitialVelocityMs();
+                const initialDir = initialV >= 0 ? 'downward' : 'upward';
+                tossInitialVelocityDisplay.textContent = `Initial Velocity: ${Math.abs(initialV)} m/s ${initialDir}`;
+                const currentV = Math.abs(obj.getVelocityMs());
+                const direction = obj.getDirection();
+                tossCurrentVelocityDisplay.textContent = `Current Velocity: ${currentV} m/s ${direction}`;
+                tossFinalVelocityDisplay.textContent = `Final Velocity: ${obj.getMaxVelocityMs()} m/s`;
+                tossElapsedTimeDisplay.textContent = `Time: ${obj.getElapsedTime()} s`;
+            } else {
+                tossInitialVelocityDisplay.textContent = 'Initial Velocity: 0 m/s downward';
+                tossCurrentVelocityDisplay.textContent = 'Current Velocity: 0 m/s downward';
+                tossFinalVelocityDisplay.textContent = 'Final Velocity: 0 m/s';
+                tossElapsedTimeDisplay.textContent = 'Time: 0 s';
             }
 
             requestAnimationFrame(animate);
         }
 
-        function createObject(initialVelocityPxFrame) {
+        function createObject(initialVelocityPxFrame, type) {
             const mass = parseFloat(document.getElementById('mass').value);
             const height = parseFloat(document.getElementById('height').value);
             const airResistance = true;
@@ -425,29 +469,33 @@
             const x = Math.random() * (canvas.width - axisOffset - 2 * radius);
             const color = `hsl(${Math.random() * 360}, 100%, 50%)`;
             const shadowColor = `hsla(${Math.random() * 360}, 100%, 50%, 0.5)`;
-            const obj = new FallingObject(x, initialY, mass, initialVelocityPxFrame, radius, color, shadowColor, airResistance, endless);
+            const obj = new FallingObject(x, initialY, mass, initialVelocityPxFrame, radius, color, shadowColor, airResistance, endless, type);
 
             objects.forEach(o => o.isTracking = false);
             obj.isTracking = true;
+            if (type === 'drop') {
+                lastDrop = obj;
+            } else {
+                lastToss = obj;
+            }
             objects.push(obj);
         }
 
         function dropObject() {
-            createObject(0);
+            createObject(0, 'drop');
         }
 
         function tossObject() {
             const tossHeight = parseFloat(document.getElementById('toss-height').value);
             const upwardSpeedMs = Math.sqrt(2 * g * tossHeight);
             const initialVelocityPxFrame = -upwardSpeedMs * scale / fps;
-            createObject(initialVelocityPxFrame);
+            createObject(initialVelocityPxFrame, 'toss');
         }
 
         function resetSimulation() {
             objects = [];
-            currentVelocityDisplay.textContent = 'Current Velocity: 0 m/s';
-            finalVelocityDisplay.textContent = 'Final Velocity: 0 m/s';
-            elapsedTimeDisplay.textContent = 'Time: 0 s';
+            lastDrop = null;
+            lastToss = null;
         }
 
         animate();
